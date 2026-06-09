@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mission Control — AI Agent Orchestration</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'] },
+          colors: {
+            bg: { 900: '#0a0a0f', 800: '#0f0f18', 700: '#161625', 600: '#1e1e32' },
+            accent: { cyan: '#00f5d4', purple: '#9b5de5', pink: '#f15bb5', blue: '#00bbf9', yellow: '#fee440' },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { scrollbar-width: thin; scrollbar-color: #1e1e32 #0a0a0f; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0a0a0f; }
+    ::-webkit-scrollbar-thumb { background: #1e1e32; border-radius: 3px; }
+    body { background: #0a0a0f; font-family: 'Inter', sans-serif; }
+    .glow-cyan { box-shadow: 0 0 20px rgba(0, 245, 212, 0.15); }
+    .glow-purple { box-shadow: 0 0 20px rgba(155, 93, 229, 0.15); }
+    .glow-pink { box-shadow: 0 0 20px rgba(241, 91, 181, 0.15); }
+    .glow-blue { box-shadow: 0 0 20px rgba(0, 187, 249, 0.15); }
+    .glow-line { background: linear-gradient(90deg, transparent, #00f5d4, #9b5de5, #f15bb5, transparent); height: 1px; }
+    .status-pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .slide-in { animation: slideIn 0.3s ease-out; }
+    .kanban-col { min-height: 300px; }
+    .card-hover:hover { transform: translateY(-2px); transition: transform 0.2s; }
+    .glass { background: rgba(15, 15, 24, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
+    .gradient-text { background: linear-gradient(135deg, #00f5d4, #9b5de5, #f15bb5); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .tab-active { border-bottom: 2px solid #00f5d4; color: #00f5d4; }
+    .tab-inactive { border-bottom: 2px solid transparent; color: #6b7280; }
+    .tab-inactive:hover { color: #9ca3af; border-bottom-color: #374151; }
+    .modal-overlay { background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); }
+    .agent-card { transition: all 0.2s; }
+    .agent-card:hover { border-color: rgba(0, 245, 212, 0.3); }
+  </style>
+</head>
+<body class="text-gray-200 min-h-screen">
+  <!-- Header -->
+  <header class="border-b border-gray-800/50 bg-bg-900/90 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-[1600px] mx-auto px-6 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-cyan to-accent-purple flex items-center justify-center">
+          <svg class="w-5 h-5 text-bg-900" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        </div>
+        <h1 class="text-lg font-semibold gradient-text">Mission Control</h1>
+        <span class="text-xs px-2 py-0.5 rounded-full bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20">v1.0</span>
+      </div>
+      <div class="flex items-center gap-4">
+        <div id="connectionStatus" class="flex items-center gap-1.5 text-xs text-gray-500">
+          <div class="w-2 h-2 rounded-full bg-gray-600" id="statusDot"></div>
+          <span id="statusText">Connecting...</span>
+        </div>
+        <div class="text-xs text-gray-500 font-mono" id="clockDisplay"></div>
+      </div>
+    </div>
+    <div class="glow-line"></div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="border-b border-gray-800/50 bg-bg-900/50">
+    <div class="max-w-[1600px] mx-auto px-6 flex gap-1">
+      <button onclick="switchTab('dashboard')" data-tab="dashboard" class="px-4 py-2.5 text-sm font-medium tab-active transition-colors">Dashboard</button>
+      <button onclick="switchTab('agents')" data-tab="agents" class="px-4 py-2.5 text-sm font-medium tab-inactive transition-colors">Agents</button>
+      <button onclick="switchTab('tasks')" data-tab="tasks" class="px-4 py-2.5 text-sm font-medium tab-inactive transition-colors">Tasks</button>
+      <button onclick="switchTab('activity')" data-tab="activity" class="px-4 py-2.5 text-sm font-medium tab-inactive transition-colors">Activity</button>
+      <button onclick="switchTab('cron')" data-tab="cron" class="px-4 py-2.5 text-sm font-medium tab-inactive transition-colors">Cron Jobs</button>
+      <button onclick="switchTab('messages')" data-tab="messages" class="px-4 py-2.5 text-sm font-medium tab-inactive transition-colors">💬 Messages</button>
+      <button onclick="switchTab('stress')" data-tab="stress" class="px-4 py-2.5 text-sm font-medium tab-inactive transition-colors">🔥 Stress Test</button>
+      <button onclick="switchTab('team')" data-tab="team" class="px-4 py-2.5 text-sm font-medium tab-inactive transition-colors">👥 Team</button>
+      <button onclick="switchTab('skills')" data-tab="skills" class="px-4 py-2.5 text-sm font-medium tab-inactive transition-colors">📚 Skills</button>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="max-w-[1600px] mx-auto px-6 py-6">
+
+    <!-- Dashboard Tab -->
+    <div id="tab-dashboard" class="tab-content">
+      <!-- Stats Row -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="glass rounded-xl p-4 glow-cyan">
+          <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Agents Online</div>
+          <div class="text-3xl font-bold text-accent-cyan font-mono" id="stat-agents-online">0</div>
+          <div class="text-xs text-gray-500 mt-1" id="stat-agents-detail">0 idle · 0 busy</div>
+        </div>
+        <div class="glass rounded-xl p-4 glow-purple">
+          <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Active Tasks</div>
+          <div class="text-3xl font-bold text-accent-purple font-mono" id="stat-tasks-active">0</div>
+          <div class="text-xs text-gray-500 mt-1" id="stat-tasks-detail">0 inbox · 0 done</div>
+        </div>
+        <div class="glass rounded-xl p-4 glow-pink">
+          <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Tokens Used</div>
+          <div class="text-3xl font-bold text-accent-pink font-mono" id="stat-tokens">0</div>
+          <div class="text-xs text-gray-500 mt-1">across all agents</div>
+        </div>
+        <div class="glass rounded-xl p-4 glow-blue">
+          <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Cost</div>
+          <div class="text-3xl font-bold text-accent-blue font-mono" id="stat-cost">$0.00</div>
+          <div class="text-xs text-gray-500 mt-1">estimated spend</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Quick Task Board -->
+        <div class="lg:col-span-2">
+          <div class="glass rounded-xl p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Task Board</h2>
+              <button onclick="showModal('task')" class="text-xs px-3 py-1.5 bg-accent-cyan/10 text-accent-cyan rounded-lg border border-accent-cyan/20 hover:bg-accent-cyan/20 transition">+ New Task</button>
+            </div>
+            <div class="grid grid-cols-4 gap-3">
+              <div class="kanban-col">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-2 h-2 rounded-full bg-gray-500"></div>
+                  <span class="text-xs font-medium text-gray-400 uppercase">Inbox</span>
+                  <span class="text-xs text-gray-600 font-mono" id="count-inbox">0</span>
+                </div>
+                <div id="kanban-inbox" class="space-y-2"></div>
+              </div>
+              <div class="kanban-col">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-2 h-2 rounded-full bg-accent-yellow"></div>
+                  <span class="text-xs font-medium text-gray-400 uppercase">Assigned</span>
+                  <span class="text-xs text-gray-600 font-mono" id="count-assigned">0</span>
+                </div>
+                <div id="kanban-assigned" class="space-y-2"></div>
+              </div>
+              <div class="kanban-col">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-2 h-2 rounded-full bg-accent-blue status-pulse"></div>
+                  <span class="text-xs font-medium text-gray-400 uppercase">In Progress</span>
+                  <span class="text-xs text-gray-600 font-mono" id="count-in_progress">0</span>
+                </div>
+                <div id="kanban-in_progress" class="space-y-2"></div>
+              </div>
+              <div class="kanban-col">
+                <div class="flex items-center gap-2 mb-3">
+                  <div class="w-2 h-2 rounded-full bg-accent-cyan"></div>
+                  <span class="text-xs font-medium text-gray-400 uppercase">Done</span>
+                  <span class="text-xs text-gray-600 font-mono" id="count-done">0</span>
+                </div>
+                <div id="kanban-done" class="space-y-2"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity Feed -->
+        <div>
+          <div class="glass rounded-xl p-5 h-full">
+            <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">Live Activity</h2>
+            <div id="activity-feed" class="space-y-3 max-h-[500px] overflow-y-auto"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agents Tab -->
+    <div id="tab-agents" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold gradient-text">Agent Fleet</h2>
+        <button onclick="showModal('agent')" class="px-4 py-2 bg-accent-cyan/10 text-accent-cyan rounded-lg border border-accent-cyan/20 hover:bg-accent-cyan/20 transition text-sm">+ Register Agent</button>
+      </div>
+      <div id="agents-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </div>
+
+    <!-- Tasks Tab -->
+    <div id="tab-tasks" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold gradient-text">All Tasks</h2>
+        <button onclick="showModal('task')" class="px-4 py-2 bg-accent-cyan/10 text-accent-cyan rounded-lg border border-accent-cyan/20 hover:bg-accent-cyan/20 transition text-sm">+ Create Task</button>
+      </div>
+      <div id="tasks-list" class="space-y-3"></div>
+    </div>
+
+    <!-- Activity Tab -->
+    <div id="tab-activity" class="tab-content hidden">
+      <h2 class="text-xl font-semibold gradient-text mb-6">Activity Stream</h2>
+      <div id="full-activity-feed" class="space-y-3"></div>
+    </div>
+
+    <!-- Cron Tab -->
+    <div id="tab-cron" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold gradient-text">Scheduled Jobs</h2>
+        <button onclick="showModal('cron')" class="px-4 py-2 bg-accent-cyan/10 text-accent-cyan rounded-lg border border-accent-cyan/20 hover:bg-accent-cyan/20 transition text-sm">+ New Job</button>
+      </div>
+      <div id="cron-list" class="space-y-3"></div>
+    </div>
+
+    <!-- Messages Tab -->
+    <div id="tab-messages" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold gradient-text">💬 Inter-Agent Messages</h2>
+        <button onclick="showModal('message')" class="px-4 py-2 bg-accent-cyan/10 text-accent-cyan rounded-lg border border-accent-cyan/20 hover:bg-accent-cyan/20 transition text-sm">+ Send Message</button>
+      </div>
+      <div id="messages-list" class="space-y-2"></div>
+    </div>
+
+    <!-- Stress Test Tab -->
+    <div id="tab-stress" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold gradient-text">🔥 Stress Test</h2>
+        <div class="flex gap-2">
+          <button onclick="runStressTest(5, 5)" class="px-4 py-2 bg-accent-yellow/10 text-accent-yellow rounded-lg border border-accent-yellow/20 hover:bg-accent-yellow/20 transition text-sm">⚡ Quick (5+5)</button>
+          <button onclick="runStressTest(10, 10)" class="px-4 py-2 bg-accent-pink/10 text-accent-pink rounded-lg border border-accent-pink/20 hover:bg-accent-pink/20 transition text-sm">🔥 Medium (10+10)</button>
+          <button onclick="runStressTest(20, 20)" class="px-4 py-2 bg-red-500/10 text-red-400 rounded-lg border border-red-500/20 hover:bg-red-500/20 transition text-sm">💥 Heavy (20+20)</button>
+        </div>
+      </div>
+      <div id="stress-status" class="glass rounded-xl p-6 mb-6 text-center text-gray-500">No stress test run yet. Click a button above to start.</div>
+      <div id="stress-results" class="space-y-3"></div>
+    </div>
+
+    <!-- Team Tab -->
+    <div id="tab-team" class="tab-content hidden">
+      <h2 class="text-xl font-semibold gradient-text mb-6">👥 Agent Team — Soul & Memory</h2>
+      <div id="team-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </div>
+
+    <!-- Skills Tab -->
+    <div id="tab-skills" class="tab-content hidden">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold gradient-text">📚 Skills Catalog</h2>
+        <span class="text-sm text-gray-500" id="skills-count">Loading...</span>
+      </div>
+      <div id="skills-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+    </div>
+
+    <!-- Agent Chat Modal -->
+    <div id="chat-modal" class="fixed inset-0 modal-overlay z-50 hidden flex items-end justify-center">
+      <div class="glass rounded-t-2xl w-full max-w-2xl h-[70vh] flex flex-col slide-in">
+        <div class="flex items-center justify-between p-4 border-b border-gray-800">
+          <div class="flex items-center gap-3">
+            <span id="chat-agent-emoji" class="text-2xl"></span>
+            <div>
+              <div id="chat-agent-name" class="font-semibold text-gray-200"></div>
+              <div id="chat-agent-role" class="text-xs text-gray-500"></div>
+            </div>
+          </div>
+          <button onclick="closeChat()" class="text-gray-500 hover:text-gray-300 text-xl">✕</button>
+        </div>
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+        <div class="p-4 border-t border-gray-800 flex gap-2">
+          <input id="chat-input" class="flex-1 bg-bg-800 border border-gray-700 rounded-lg px-4 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendChatMessage()">
+          <button onclick="sendChatMessage()" class="px-6 py-2 bg-accent-cyan/20 text-accent-cyan rounded-lg border border-accent-cyan/30 hover:bg-accent-cyan/30 text-sm font-medium">Send</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal Overlay -->
+  <div id="modal-overlay" class="fixed inset-0 modal-overlay z-50 hidden flex items-center justify-center">
+    <div class="glass rounded-2xl p-6 w-full max-w-md mx-4 slide-in" id="modal-content"></div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed bottom-6 right-6 z-50 space-y-2"></div>
+
+  <script>
+    // ─── State ─────────────────────────────────────────────────
+    let agents = [];
+    let tasks = [];
+    let activities = [];
+    let cronJobs = [];
+    let currentTab = 'dashboard';
+
+    // ─── API Helpers ───────────────────────────────────────────
+    const api = {
+      get: (url) => fetch(url).then(r => r.json()),
+      post: (url, data) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()),
+      put: (url, data) => fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()),
+      del: (url) => fetch(url, { method: 'DELETE' }).then(r => r.json()),
+    };
+
+    // ─── SSE Connection ───────────────────────────────────────
+    function connectSSE() {
+      const es = new EventSource('/api/events');
+      es.onopen = () => {
+        document.getElementById('statusDot').className = 'w-2 h-2 rounded-full bg-accent-cyan status-pulse';
+        document.getElementById('statusText').textContent = 'Connected';
+        document.getElementById('statusText').className = 'text-accent-cyan';
+      };
+      es.addEventListener('activity', (e) => {
+        const data = JSON.parse(e.data);
+        activities.unshift(data);
+        renderActivityFeed();
+      });
+      es.addEventListener('task_dispatched', () => refreshAll());
+      es.addEventListener('task_completed', () => refreshAll());
+      es.addEventListener('task_created', () => refreshAll());
+      es.addEventListener('task_updated', () => refreshAll());
+      es.addEventListener('agent_heartbeat', () => refreshAll());
+      es.onerror = () => {
+        document.getElementById('statusDot').className = 'w-2 h-2 rounded-full bg-red-500';
+        document.getElementById('statusText').textContent = 'Disconnected';
+        document.getElementById('statusText').className = 'text-red-400';
+      };
+    }
+
+    // ─── Data Loading ──────────────────────────────────────────
+    async function refreshAll() {
+      const [stats, agentsData, tasksData, activitiesData, cronData, msgsData] = await Promise.all([
+        api.get('/api/stats'),
+        api.get('/api/agents'),
+        api.get('/api/tasks'),
+        api.get('/api/activities'),
+        api.get('/api/cron'),
+        api.get('/api/messages?limit=30')
+      ]);
+      agents = agentsData;
+      tasks = tasksData;
+      activities = activitiesData;
+      cronJobs = cronData;
+      renderStats(stats);
+      renderKanban();
+      renderAgents();
+      renderTasks();
+      renderActivityFeed();
+      renderCronJobs();
+      renderMessages(msgsData);
+    }
+
+    // ─── Render: Stats ─────────────────────────────────────────
+    function renderStats(s) {
+      document.getElementById('stat-agents-online').textContent = s.agents.total;
+      document.getElementById('stat-agents-detail').textContent = `${s.agents.idle || 0} idle · ${s.agents.busy || 0} busy`;
+      document.getElementById('stat-tasks-active').textContent = s.tasks.in_progress || 0;
+      document.getElementById('stat-tasks-detail').textContent = `${s.tasks.inbox || 0} inbox · ${s.tasks.done || 0} done`;
+      document.getElementById('stat-tokens').textContent = formatNumber(s.tokens);
+      document.getElementById('stat-cost').textContent = `$${(s.cost || 0).toFixed(2)}`;
+    }
+
+    // ─── Render: Kanban ────────────────────────────────────────
+    function renderKanban() {
+      ['inbox', 'assigned', 'in_progress', 'done'].forEach(status => {
+        const col = document.getElementById(`kanban-${status}`);
+        const filtered = tasks.filter(t => t.status === status);
+        document.getElementById(`count-${status}`).textContent = filtered.length;
+        col.innerHTML = filtered.slice(0, 5).map(t => `
+          <div class="glass rounded-lg p-3 card-hover cursor-pointer" onclick="showTaskDetail(${t.id})">
+            <div class="flex items-start justify-between mb-1">
+              <span class="text-xs font-medium text-gray-300 line-clamp-2">${esc(t.title)}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded ${priorityColor(t.priority)}">${t.priority}</span>
+            </div>
+            ${t.agent_name ? `<div class="text-[10px] text-gray-500 mt-1">→ ${esc(t.agent_name)}</div>` : ''}
+          </div>
+        `).join('');
+      });
+    }
+
+    // ─── Render: Agents ────────────────────────────────────────
+    function renderAgents() {
+      document.getElementById('agents-grid').innerHTML = agents.map(a => `
+        <div class="agent-card glass rounded-xl p-5 border border-transparent">
+          <div class="flex items-start justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl ${agentTypeBg(a.type)} flex items-center justify-center text-lg">
+                ${agentIcon(a.type)}
+              </div>
+              <div>
+                <div class="font-semibold text-gray-200">${esc(a.name)}</div>
+                <div class="text-xs text-gray-500">${esc(a.role)} · ${esc(a.type)}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <div class="w-2 h-2 rounded-full ${statusColor(a.status)} ${a.status === 'busy' ? 'status-pulse' : ''}"></div>
+              <span class="text-xs text-gray-400 capitalize">${a.status}</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-3 gap-2 mt-4">
+            <div class="text-center">
+              <div class="text-lg font-bold font-mono text-accent-cyan">${a.tasks_completed || 0}</div>
+              <div class="text-[10px] text-gray-500">Done</div>
+            </div>
+            <div class="text-center">
+              <div class="text-lg font-bold font-mono text-accent-pink">${a.tasks_failed || 0}</div>
+              <div class="text-[10px] text-gray-500">Failed</div>
+            </div>
+            <div class="text-center">
+              <div class="text-lg font-bold font-mono text-accent-purple">${formatNumber(a.total_tokens || 0)}</div>
+              <div class="text-[10px] text-gray-500">Tokens</div>
+            </div>
+          </div>
+          ${a.model ? `<div class="mt-3 text-[10px] text-gray-600 font-mono bg-bg-800 rounded px-2 py-1">model: ${esc(a.model)}</div>` : ''}
+          ${a.last_activity ? `<div class="mt-2 text-xs text-gray-500 truncate">Last: ${esc(a.last_activity)}</div>` : ''}
+          <div class="flex gap-2 mt-4">
+            <button onclick="dispatchRandomTask(${a.id})" class="flex-1 text-xs py-1.5 bg-accent-cyan/10 text-accent-cyan rounded border border-accent-cyan/20 hover:bg-accent-cyan/20">Dispatch Task</button>
+            <button onclick="deleteAgent(${a.id})" class="text-xs px-3 py-1.5 bg-red-500/10 text-red-400 rounded border border-red-500/20 hover:bg-red-500/20">✕</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ─── Render: Tasks List ────────────────────────────────────
+    function renderTasks() {
+      document.getElementById('tasks-list').innerHTML = tasks.map(t => `
+        <div class="glass rounded-xl p-4 flex items-center justify-between card-hover cursor-pointer" onclick="showTaskDetail(${t.id})">
+          <div class="flex items-center gap-4 flex-1 min-w-0">
+            <div class="w-2 h-2 rounded-full flex-shrink-0 ${taskStatusColor(t.status)}"></div>
+            <div class="min-w-0 flex-1">
+              <div class="font-medium text-gray-200 truncate">${esc(t.title)}</div>
+              <div class="text-xs text-gray-500 truncate">${esc(t.description || 'No description')}</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-4 ml-4 flex-shrink-0">
+            <span class="text-[10px] px-2 py-0.5 rounded ${priorityColor(t.priority)}">${t.priority}</span>
+            <span class="text-xs text-gray-500 capitalize bg-bg-700 px-2 py-0.5 rounded">${t.status.replace('_', ' ')}</span>
+            ${t.agent_name ? `<span class="text-xs text-accent-cyan">${esc(t.agent_name)}</span>` : ''}
+            <div class="flex gap-1">
+              ${t.status === 'assigned' ? `<button onclick="event.stopPropagation(); dispatchTask(${t.id})" class="text-[10px] px-2 py-1 bg-accent-cyan/10 text-accent-cyan rounded border border-accent-cyan/20">▶ Dispatch</button>` : ''}
+              ${t.status === 'inbox' ? `<button onclick="event.stopPropagation(); autoAssign(${t.id})" class="text-[10px] px-2 py-1 bg-accent-yellow/10 text-accent-yellow rounded border border-accent-yellow/20">→ Assign</button>` : ''}
+              <button onclick="event.stopPropagation(); deleteTask(${t.id})" class="text-[10px] px-2 py-1 bg-red-500/10 text-red-400 rounded border border-red-500/20">✕</button>
+            </div>
+          </div>
+        </div>
+      `).join('') || '<div class="text-center text-gray-600 py-12">No tasks yet. Create one to get started.</div>';
+    }
+
+    // ─── Render: Activity Feed ─────────────────────────────────
+    function renderActivityFeed() {
+      const html = activities.slice(0, 30).map(a => `
+        <div class="flex items-start gap-3 slide-in">
+          <div class="w-6 h-6 rounded-full ${activityIcon(a.type).bg} flex items-center justify-center flex-shrink-0 mt-0.5">
+            <span class="text-[10px]">${activityIcon(a.type).emoji}</span>
+          </div>
+          <div class="min-w-0">
+            <div class="text-xs text-gray-300">${esc(a.description)}</div>
+            <div class="text-[10px] text-gray-600 mt-0.5">${timeAgo(a.created_at)}</div>
+          </div>
+        </div>
+      `).join('');
+      document.getElementById('activity-feed').innerHTML = html || '<div class="text-gray-600 text-xs">No activity yet</div>';
+      document.getElementById('full-activity-feed').innerHTML = html || '<div class="text-gray-600 text-xs">No activity yet</div>';
+    }
+
+    // ─── Render: Cron Jobs ─────────────────────────────────────
+    function renderCronJobs() {
+      document.getElementById('cron-list').innerHTML = cronJobs.map(c => `
+        <div class="glass rounded-xl p-4 flex items-center justify-between">
+          <div>
+            <div class="font-medium text-gray-200">${esc(c.name)}</div>
+            <div class="text-xs text-gray-500 font-mono mt-1">${esc(c.schedule)}</div>
+            <div class="text-xs text-gray-600 mt-1 truncate max-w-md">${esc(c.prompt)}</div>
+          </div>
+          <div class="flex items-center gap-3">
+            ${c.agent_name ? `<span class="text-xs text-accent-cyan">${esc(c.agent_name)}</span>` : ''}
+            <span class="text-xs text-gray-500">${c.run_count || 0} runs</span>
+            <button onclick="deleteCron(${c.id})" class="text-xs px-3 py-1 bg-red-500/10 text-red-400 rounded border border-red-500/20">✕</button>
+          </div>
+        </div>
+      `).join('') || '<div class="text-center text-gray-600 py-12">No scheduled jobs</div>';
+    }
+
+    // ─── Render: Messages ──────────────────────────────────────
+    function renderMessages(msgs) {
+      const html = msgs.map(m => `
+        <div class="glass rounded-lg p-3 slide-in">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs font-semibold ${m.type === 'reply' ? 'text-accent-cyan' : 'text-accent-purple'}">${esc(m.from_name || 'Unknown')}</span>
+            <span class="text-xs text-gray-600">→</span>
+            <span class="text-xs font-semibold text-accent-yellow">${esc(m.to_name || 'all')}</span>
+            <span class="text-[10px] text-gray-600 ml-auto">${timeAgo(m.created_at)}</span>
+          </div>
+          <div class="text-sm text-gray-300">${esc(m.content)}</div>
+          ${m.metadata?.response_ms ? `<div class="text-[10px] text-gray-600 mt-1">⏱ ${m.metadata.response_ms}ms · ${esc(m.metadata.model || '')}</div>` : ''}
+        </div>
+      `).join('');
+      const el = document.getElementById('messages-list');
+      if (el) el.innerHTML = html || '<div class="text-center text-gray-600 py-12">No messages yet. Send one to start inter-agent communication.</div>';
+    }
+
+    // ─── Modals ────────────────────────────────────────────────
+    function showModal(type) {
+      const overlay = document.getElementById('modal-overlay');
+      const content = document.getElementById('modal-content');
+      overlay.classList.remove('hidden');
+
+      if (type === 'agent') {
+        content.innerHTML = `
+          <h3 class="text-lg font-semibold gradient-text mb-4">Register New Agent</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Name</label>
+              <input id="m-agent-name" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none" placeholder="e.g. My Agent">
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Role</label>
+              <select id="m-agent-role" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none">
+                <option value="general">General</option>
+                <option value="developer">Developer</option>
+                <option value="researcher">Researcher</option>
+                <option value="automation">Automation</option>
+                <option value="reviewer">Reviewer</option>
+                <option value="orchestrator">Orchestrator</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Type</label>
+              <select id="m-agent-type" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none">
+                <option value="hermes">Hermes Agent</option>
+                <option value="claude-code">Claude Code</option>
+                <option value="codex">Codex CLI</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Model</label>
+              <input id="m-agent-model" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none" placeholder="e.g. mimo-v2.5-pro" value="mimo-v2.5-pro">
+            </div>
+          </div>
+          <div class="flex gap-3 mt-6">
+            <button onclick="createAgent()" class="flex-1 py-2 bg-accent-cyan/20 text-accent-cyan rounded-lg border border-accent-cyan/30 hover:bg-accent-cyan/30 transition text-sm font-medium">Register</button>
+            <button onclick="hideModal()" class="px-4 py-2 bg-bg-700 text-gray-400 rounded-lg hover:bg-bg-600 transition text-sm">Cancel</button>
+          </div>
+        `;
+      } else if (type === 'task') {
+        content.innerHTML = `
+          <h3 class="text-lg font-semibold gradient-text mb-4">Create New Task</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Title</label>
+              <input id="m-task-title" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none" placeholder="e.g. Research competitor pricing">
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Description</label>
+              <textarea id="m-task-desc" rows="3" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none resize-none" placeholder="Detailed task description..."></textarea>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-gray-500 mb-1 block">Priority</label>
+                <select id="m-task-priority" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none">
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-gray-500 mb-1 block">Assign to Agent</label>
+                <select id="m-task-agent" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none">
+                  <option value="">Unassigned</option>
+                  ${agents.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="flex gap-3 mt-6">
+            <button onclick="createTask()" class="flex-1 py-2 bg-accent-cyan/20 text-accent-cyan rounded-lg border border-accent-cyan/30 hover:bg-accent-cyan/30 transition text-sm font-medium">Create Task</button>
+            <button onclick="hideModal()" class="px-4 py-2 bg-bg-700 text-gray-400 rounded-lg hover:bg-bg-600 transition text-sm">Cancel</button>
+          </div>
+        `;
+      } else if (type === 'cron') {
+        content.innerHTML = `
+          <h3 class="text-lg font-semibold gradient-text mb-4">Schedule Cron Job</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Name</label>
+              <input id="m-cron-name" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none" placeholder="e.g. Daily Report">
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Schedule (cron expression)</label>
+              <input id="m-cron-schedule" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none font-mono" placeholder="0 9 * * * (every day at 9am)">
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Prompt / Task</label>
+              <textarea id="m-cron-prompt" rows="3" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none resize-none" placeholder="What should the agent do?"></textarea>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Agent</label>
+              <select id="m-cron-agent" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none">
+                <option value="">Any available</option>
+                ${agents.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="flex gap-3 mt-6">
+            <button onclick="createCron()" class="flex-1 py-2 bg-accent-cyan/20 text-accent-cyan rounded-lg border border-accent-cyan/30 hover:bg-accent-cyan/30 transition text-sm font-medium">Schedule</button>
+            <button onclick="hideModal()" class="px-4 py-2 bg-bg-700 text-gray-400 rounded-lg hover:bg-bg-600 transition text-sm">Cancel</button>
+          </div>
+        `;
+      } else if (type === 'message') {
+        content.innerHTML = `
+          <h3 class="text-lg font-semibold gradient-text mb-4">Send Agent-to-Agent Message</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">From Agent</label>
+              <select id="m-msg-from" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none">
+                ${agents.map(a => `<option value="${a.id}">${esc(a.name)} (${a.role})</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">To Agent</label>
+              <select id="m-msg-to" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none">
+                ${agents.map(a => `<option value="${a.id}">${esc(a.name)} (${a.role})</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-500 mb-1 block">Message</label>
+              <textarea id="m-msg-content" rows="3" class="w-full bg-bg-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent-cyan focus:outline-none resize-none" placeholder="What do you want to say to the other agent?"></textarea>
+            </div>
+          </div>
+          <div class="flex gap-3 mt-6">
+            <button onclick="sendAgentMessage()" class="flex-1 py-2 bg-accent-cyan/20 text-accent-cyan rounded-lg border border-accent-cyan/30 hover:bg-accent-cyan/30 transition text-sm font-medium">💬 Send & Get Reply</button>
+            <button onclick="hideModal()" class="px-4 py-2 bg-bg-700 text-gray-400 rounded-lg hover:bg-bg-600 transition text-sm">Cancel</button>
+          </div>
+        `;
+      }
+    }
+
+    function hideModal() {
+      document.getElementById('modal-overlay').classList.add('hidden');
+    }
+
+    // ─── Actions ───────────────────────────────────────────────
+    async function createAgent() {
+      const name = document.getElementById('m-agent-name').value.trim();
+      if (!name) return toast('Name is required', 'error');
+      await api.post('/api/agents', {
+        name,
+        role: document.getElementById('m-agent-role').value,
+        type: document.getElementById('m-agent-type').value,
+        model: document.getElementById('m-agent-model').value
+      });
+      hideModal();
+      toast(`Agent "${name}" registered`, 'success');
+      refreshAll();
+    }
+
+    async function createTask() {
+      const title = document.getElementById('m-task-title').value.trim();
+      if (!title) return toast('Title is required', 'error');
+      const agentId = document.getElementById('m-task-agent').value;
+      await api.post('/api/tasks', {
+        title,
+        description: document.getElementById('m-task-desc').value,
+        priority: document.getElementById('m-task-priority').value,
+        assigned_to: agentId ? parseInt(agentId) : null
+      });
+      hideModal();
+      toast(`Task "${title}" created`, 'success');
+      refreshAll();
+    }
+
+    async function createCron() {
+      const name = document.getElementById('m-cron-name').value.trim();
+      const schedule = document.getElementById('m-cron-schedule').value.trim();
+      const prompt = document.getElementById('m-cron-prompt').value.trim();
+      if (!name || !schedule || !prompt) return toast('All fields required', 'error');
+      await api.post('/api/cron', {
+        name, schedule, prompt,
+        agent_id: document.getElementById('m-cron-agent').value || null
+      });
+      hideModal();
+      toast(`Cron "${name}" scheduled`, 'success');
+      refreshAll();
+    }
+
+    async function dispatchTask(taskId) {
+      const res = await api.post(`/api/tasks/${taskId}/dispatch`);
+      toast(res.message || 'Task dispatched', 'success');
+      refreshAll();
+    }
+
+    async function dispatchRandomTask(agentId) {
+      const agent = agents.find(a => a.id === agentId);
+      if (!agent) return;
+      // Create and dispatch a demo task
+      const res = await api.post('/api/tasks', {
+        title: `Demo task for ${agent.name}`,
+        description: `Automated test dispatch to ${agent.name} (${agent.type})`,
+        priority: 'medium',
+        assigned_to: agentId
+      });
+      if (res.id) {
+        await api.post(`/api/tasks/${res.id}/dispatch`);
+        toast(`Demo task dispatched to ${agent.name}`, 'success');
+        refreshAll();
+      }
+    }
+
+    async function autoAssign(taskId) {
+      // Find idle agent with fewest tasks
+      const idle = agents.filter(a => a.status === 'idle').sort((a, b) => a.tasks_completed - b.tasks_completed);
+      if (idle.length === 0) return toast('No idle agents available', 'error');
+      await api.put(`/api/tasks/${taskId}`, { assigned_to: idle[0].id, status: 'assigned' });
+      toast(`Assigned to ${idle[0].name}`, 'success');
+      refreshAll();
+    }
+
+    async function deleteAgent(id) {
+      if (!confirm('Delete this agent?')) return;
+      await api.del(`/api/agents/${id}`);
+      toast('Agent deleted', 'success');
+      refreshAll();
+    }
+
+    async function deleteTask(id) {
+      if (!confirm('Delete this task?')) return;
+      await api.del(`/api/tasks/${id}`);
+      toast('Task deleted', 'success');
+      refreshAll();
+    }
+
+    async function deleteCron(id) {
+      if (!confirm('Delete this cron job?')) return;
+      await api.del(`/api/cron/${id}`);
+      toast('Cron job deleted', 'success');
+      refreshAll();
+    }
+
+    async function showTaskDetail(id) {
+      const task = tasks.find(t => t.id === id);
+      if (!task) return;
+      const overlay = document.getElementById('modal-overlay');
+      const content = document.getElementById('modal-content');
+      overlay.classList.remove('hidden');
+      content.innerHTML = `
+        <h3 class="text-lg font-semibold text-gray-200 mb-2">${esc(task.title)}</h3>
+        <div class="space-y-2 text-sm">
+          <div><span class="text-gray-500">Status:</span> <span class="capitalize">${task.status.replace('_', ' ')}</span></div>
+          <div><span class="text-gray-500">Priority:</span> ${task.priority}</div>
+          <div><span class="text-gray-500">Assigned:</span> ${task.agent_name || 'Unassigned'}</div>
+          <div><span class="text-gray-500">Description:</span> ${esc(task.description || 'None')}</div>
+          ${task.result ? `<div class="mt-3"><span class="text-gray-500">Result:</span><pre class="mt-1 bg-bg-800 rounded p-2 text-xs overflow-auto max-h-40">${esc(task.result)}</pre></div>` : ''}
+          ${task.error ? `<div class="mt-3"><span class="text-red-400">Error:</span><pre class="mt-1 bg-red-900/20 rounded p-2 text-xs text-red-300 overflow-auto max-h-40">${esc(task.error)}</pre></div>` : ''}
+        </div>
+        <div class="flex gap-2 mt-6">
+          ${task.status === 'assigned' ? `<button onclick="dispatchTask(${task.id}); hideModal();" class="flex-1 py-2 bg-accent-cyan/20 text-accent-cyan rounded-lg border border-accent-cyan/30 text-sm">▶ Dispatch</button>` : ''}
+          <button onclick="hideModal()" class="px-4 py-2 bg-bg-700 text-gray-400 rounded-lg text-sm">Close</button>
+        </div>
+      `;
+    }
+
+    // ─── Tab Switching ─────────────────────────────────────────
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.getElementById(`tab-${tab}`).classList.remove('hidden');
+      document.querySelectorAll('[data-tab]').forEach(btn => {
+        btn.className = btn.dataset.tab === tab
+          ? 'px-4 py-2.5 text-sm font-medium tab-active transition-colors'
+          : 'px-4 py-2.5 text-sm font-medium tab-inactive transition-colors';
+      });
+      // Load data for specific tabs
+      if (tab === 'team') refreshTeam();
+      if (tab === 'skills') refreshSkills();
+      if (tab === 'messages') refreshMessages();
+    }
+
+    // ─── Helpers ───────────────────────────────────────────────
+    function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+    function formatNumber(n) { if (n >= 1e6) return (n/1e6).toFixed(1) + 'M'; if (n >= 1e3) return (n/1e3).toFixed(1) + 'K'; return String(n); }
+    function priorityColor(p) {
+      return { urgent: 'bg-red-500/20 text-red-400', high: 'bg-orange-500/20 text-orange-400', medium: 'bg-yellow-500/20 text-yellow-400', low: 'bg-gray-500/20 text-gray-400' }[p] || 'bg-gray-500/20 text-gray-400';
+    }
+    function statusColor(s) {
+      return { idle: 'bg-accent-cyan', busy: 'bg-accent-yellow', error: 'bg-red-500', offline: 'bg-gray-600' }[s] || 'bg-gray-600';
+    }
+    function taskStatusColor(s) {
+      return { inbox: 'bg-gray-500', assigned: 'bg-accent-yellow', in_progress: 'bg-accent-blue status-pulse', done: 'bg-accent-cyan', failed: 'bg-red-500', review: 'bg-accent-purple' }[s] || 'bg-gray-500';
+    }
+    function agentTypeBg(t) {
+      return { hermes: 'bg-accent-cyan/10', 'claude-code': 'bg-accent-purple/10', codex: 'bg-accent-pink/10', custom: 'bg-accent-yellow/10' }[t] || 'bg-gray-800';
+    }
+    function agentIcon(t) {
+      return { hermes: '⚡', 'claude-code': '🧠', codex: '🔮', custom: '⚙️' }[t] || '🤖';
+    }
+    function activityIcon(t) {
+      const map = {
+        system: { emoji: '⚙️', bg: 'bg-gray-700' },
+        task_created: { emoji: '📋', bg: 'bg-accent-blue/20' },
+        task_dispatched: { emoji: '🚀', bg: 'bg-accent-cyan/20' },
+        task_completed: { emoji: '✅', bg: 'bg-green-900/30' },
+        task_updated: { emoji: '📝', bg: 'bg-accent-yellow/20' },
+        agent_created: { emoji: '🤖', bg: 'bg-accent-purple/20' },
+        agent_updated: { emoji: '🔧', bg: 'bg-gray-700' },
+        agent_deleted: { emoji: '🗑️', bg: 'bg-red-900/20' },
+        cron_created: { emoji: '⏰', bg: 'bg-accent-pink/20' },
+      };
+      return map[t] || { emoji: '📌', bg: 'bg-gray-700' };
+    }
+    function timeAgo(ts) {
+      const diff = Math.floor(Date.now() / 1000) - ts;
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+      return `${Math.floor(diff/86400)}d ago`;
+    }
+
+    function toast(msg, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const colors = { success: 'border-accent-cyan/30 text-accent-cyan', error: 'border-red-500/30 text-red-400', info: 'border-accent-blue/30 text-accent-blue' };
+      const el = document.createElement('div');
+      el.className = `glass rounded-lg px-4 py-2 text-sm border ${colors[type]} slide-in`;
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3000);
+    }
+
+    // ─── Clock ─────────────────────────────────────────────────
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clockDisplay').textContent = now.toLocaleTimeString('en-US', { hour12: false });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // ─── Init ──────────────────────────────────────────────────
+    connectSSE();
+    refreshAll();
+    setInterval(refreshAll, 15000);
+
+    // ─── Messages ──────────────────────────────────────────────
+    async function refreshMessages() {
+      const msgs = await api.get('/api/messages?limit=50');
+      const html = msgs.map(m => `
+        <div class="glass rounded-lg p-3 slide-in">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs font-semibold ${m.type === 'reply' ? 'text-accent-cyan' : 'text-accent-purple'}">${esc(m.from_name || 'Unknown')}</span>
+            <span class="text-xs text-gray-600">→</span>
+            <span class="text-xs font-semibold text-accent-yellow">${esc(m.to_name || 'all')}</span>
+            <span class="text-[10px] text-gray-600 ml-auto">${timeAgo(m.created_at)}</span>
+          </div>
+          <div class="text-sm text-gray-300">${esc(m.content)}</div>
+          ${m.metadata?.response_ms ? `<div class="text-[10px] text-gray-600 mt-1">⏱ ${m.metadata.response_ms}ms · ${esc(m.metadata.model || '')}</div>` : ''}
+        </div>
+      `).join('');
+      document.getElementById('messages-list').innerHTML = html || '<div class="text-center text-gray-600 py-12">No messages yet. Send one to start inter-agent communication.</div>';
+    }
+
+    // ─── Team View ─────────────────────────────────────────────
+    let currentChatAgentId = null;
+
+    async function refreshTeam() {
+      const team = await api.get('/api/team');
+      const html = team.map(a => `
+        <div class="glass rounded-xl p-5 border border-transparent hover:border-opacity-30 transition-all" style="border-color: ${a.color}20">
+          <div class="flex items-start justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style="background: ${a.color}15">
+                ${a.emoji}
+              </div>
+              <div>
+                <div class="font-semibold text-gray-200">${esc(a.name)}</div>
+                <div class="text-xs text-gray-500">${esc(a.role)} · ${esc(a.type)}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <div class="w-2 h-2 rounded-full ${statusColor(a.status)} ${a.status === 'busy' ? 'status-pulse' : ''}"></div>
+              <span class="text-xs text-gray-400 capitalize">${a.status}</span>
+            </div>
+          </div>
+          <div class="text-xs text-gray-400 mb-3 line-clamp-3">${esc(a.soul_preview)}...</div>
+          <div class="grid grid-cols-3 gap-2 mb-3">
+            <div class="text-center bg-bg-800 rounded-lg p-2">
+              <div class="text-sm font-bold font-mono" style="color: ${a.color}">${a.tasks_completed || 0}</div>
+              <div class="text-[10px] text-gray-600">Tasks</div>
+            </div>
+            <div class="text-center bg-bg-800 rounded-lg p-2">
+              <div class="text-sm font-bold font-mono text-accent-purple">${a.memory_count || 0}</div>
+              <div class="text-[10px] text-gray-600">Memories</div>
+            </div>
+            <div class="text-center bg-bg-800 rounded-lg p-2">
+              <div class="text-sm font-bold font-mono text-accent-yellow">${formatNumber(a.total_tokens || 0)}</div>
+              <div class="text-[10px] text-gray-600">Tokens</div>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="openChat(${a.id})" class="flex-1 text-xs py-2 rounded-lg border transition" style="background: ${a.color}15; color: ${a.color}; border-color: ${a.color}30">💬 Chat</button>
+            <button onclick="viewSoul(${a.id})" class="text-xs px-3 py-2 bg-bg-700 text-gray-400 rounded-lg hover:bg-bg-600">📜 Soul</button>
+            <button onclick="viewMemory(${a.id})" class="text-xs px-3 py-2 bg-bg-700 text-gray-400 rounded-lg hover:bg-bg-600">🧠</button>
+          </div>
+        </div>
+      `).join('');
+      document.getElementById('team-grid').innerHTML = html;
+    }
+
+    async function viewSoul(agentId) {
+      const soul = await api.get(`/api/agents/${agentId}/soul`);
+      const overlay = document.getElementById('modal-overlay');
+      const content = document.getElementById('modal-content');
+      overlay.classList.remove('hidden');
+      content.innerHTML = `
+        <div class="flex items-center gap-3 mb-4">
+          <span class="text-3xl">${soul.emoji}</span>
+          <div>
+            <h3 class="text-lg font-semibold text-gray-200">${esc(soul.name)}</h3>
+            <div class="text-xs text-gray-500">${esc(soul.role)}</div>
+          </div>
+        </div>
+        <pre class="bg-bg-800 rounded-lg p-4 text-xs text-gray-300 overflow-auto max-h-[60vh] whitespace-pre-wrap font-mono">${esc(soul.soul)}</pre>
+        <button onclick="hideModal()" class="mt-4 px-4 py-2 bg-bg-700 text-gray-400 rounded-lg text-sm w-full">Close</button>
+      `;
+    }
+
+    async function viewMemory(agentId) {
+      const memories = await api.get(`/api/agents/${agentId}/memory?limit=20`);
+      const agent = agents.find(a => a.id === agentId);
+      const overlay = document.getElementById('modal-overlay');
+      const content = document.getElementById('modal-content');
+      overlay.classList.remove('hidden');
+      content.innerHTML = `
+        <h3 class="text-lg font-semibold text-gray-200 mb-4">🧠 ${esc(agent?.name || 'Agent')} Memory</h3>
+        <div class="space-y-2 max-h-[50vh] overflow-y-auto">
+          ${memories.map(m => `
+            <div class="bg-bg-800 rounded-lg p-3">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-xs font-semibold text-accent-cyan">${esc(m.category)}</span>
+                <span class="text-[10px] text-gray-600">⭐ ${m.importance}</span>
+              </div>
+              <div class="text-xs text-gray-400 font-mono">${esc(m.key)}</div>
+              <div class="text-sm text-gray-300 mt-1">${esc(m.value)}</div>
+            </div>
+          `).join('') || '<div class="text-center text-gray-600 py-8">No memories yet</div>'}
+        </div>
+        <button onclick="hideModal()" class="mt-4 px-4 py-2 bg-bg-700 text-gray-400 rounded-lg text-sm w-full">Close</button>
+      `;
+    }
+
+    async function openChat(agentId) {
+      currentChatAgentId = agentId;
+      const agent = agents.find(a => a.id === agentId);
+      const team = await api.get('/api/team');
+      const teamAgent = team.find(a => a.id === agentId);
+      document.getElementById('chat-agent-emoji').textContent = teamAgent?.emoji || '🤖';
+      document.getElementById('chat-agent-name').textContent = agent?.name || 'Agent';
+      document.getElementById('chat-agent-role').textContent = `${agent?.role} · ${agent?.type}`;
+      document.getElementById('chat-messages').innerHTML = `<div class="text-center text-gray-600 text-sm py-8">Start chatting with ${esc(agent?.name)}...</div>`;
+      document.getElementById('chat-modal').classList.remove('hidden');
+      document.getElementById('chat-input').focus();
+    }
+
+    function closeChat() {
+      document.getElementById('chat-modal').classList.add('hidden');
+      currentChatAgentId = null;
+    }
+
+    async function sendChatMessage() {
+      const input = document.getElementById('chat-input');
+      const message = input.value.trim();
+      if (!message || !currentChatAgentId) return;
+      input.value = '';
+
+      const chatDiv = document.getElementById('chat-messages');
+      chatDiv.innerHTML += `<div class="flex justify-end"><div class="bg-accent-cyan/10 border border-accent-cyan/20 rounded-lg px-4 py-2 max-w-[80%]"><div class="text-sm text-gray-200">${esc(message)}</div></div></div>`;
+      chatDiv.innerHTML += `<div id="typing" class="flex justify-start"><div class="bg-bg-700 rounded-lg px-4 py-2"><div class="text-sm text-gray-500">typing...</div></div></div>`;
+      chatDiv.scrollTop = chatDiv.scrollHeight;
+
+      const res = await api.post(`/api/agents/${currentChatAgentId}/chat`, { message });
+      document.getElementById('typing')?.remove();
+
+      if (res.reply) {
+        chatDiv.innerHTML += `<div class="flex justify-start"><div class="bg-bg-700 border border-gray-700 rounded-lg px-4 py-2 max-w-[80%]"><div class="text-xs text-gray-500 mb-1">${esc(res.soul_name || 'Agent')} · ${res.elapsed_ms}ms</div><div class="text-sm text-gray-200">${esc(res.reply)}</div></div></div>`;
+      } else {
+        chatDiv.innerHTML += `<div class="flex justify-start"><div class="bg-red-900/20 border border-red-500/20 rounded-lg px-4 py-2"><div class="text-sm text-red-400">Error: ${esc(res.error || 'No response')}</div></div></div>`;
+      }
+      chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    // ─── Skills Catalog ────────────────────────────────────────
+    async function refreshSkills() {
+      const data = await api.get('/api/skills');
+      document.getElementById('skills-count').textContent = `${data.total} skills installed`;
+      const categories = {};
+      data.skills.forEach(s => {
+        if (!categories[s.category]) categories[s.category] = [];
+        categories[s.category].push(s);
+      });
+
+      const html = Object.entries(categories).map(([cat, skills]) => `
+        <div class="glass rounded-xl p-4">
+          <h3 class="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-3">${esc(cat)} <span class="text-gray-600">(${skills.length})</span></h3>
+          <div class="space-y-2">
+            ${skills.map(s => `
+              <div class="bg-bg-800 rounded-lg p-2 flex items-center justify-between">
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs font-medium text-gray-300 truncate">${esc(s.name)}</div>
+                  <div class="text-[10px] text-gray-600 truncate">${esc(s.description?.substring(0, 80))}...</div>
+                </div>
+                <span class="text-[10px] text-gray-600 ml-2">${s.size_kb}KB</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+      document.getElementById('skills-grid').innerHTML = html;
+    }
+
+    async function sendAgentMessage() {
+      const fromId = parseInt(document.getElementById('m-msg-from').value);
+      const toId = parseInt(document.getElementById('m-msg-to').value);
+      const content = document.getElementById('m-msg-content').value.trim();
+      if (!fromId || !toId || !content) return toast('All fields required', 'error');
+      hideModal();
+      toast('Sending message...', 'info');
+      const res = await api.post('/api/messages/chat', { from_agent_id: fromId, to_agent_id: toId, content });
+      if (res.reply) {
+        toast(`Reply from ${agents.find(a => a.id === toId)?.name}: ${res.reply.substring(0, 60)}...`, 'success');
+      }
+      refreshMessages();
+      refreshAll();
+    }
+
+    // ─── Stress Test ───────────────────────────────────────────
+    async function runStressTest(tasks, messages) {
+      document.getElementById('stress-status').innerHTML = `
+        <div class="flex items-center justify-center gap-3">
+          <div class="w-4 h-4 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin"></div>
+          <span class="text-accent-cyan">Running stress test: ${tasks} tasks + ${messages} messages...</span>
+        </div>
+      `;
+      const res = await api.post('/api/stress-test', { num_tasks: tasks, num_messages: messages, name: `Stress Test ${tasks}+${messages}` });
+      toast(`Stress test #${res.id} started`, 'info');
+      // Poll for completion
+      pollStressTest(res.id);
+    }
+
+    async function pollStressTest(id) {
+      const poll = setInterval(async () => {
+        const tests = await api.get('/api/stress-test');
+        const test = tests.find(t => t.id === id);
+        if (test && test.status === 'completed') {
+          clearInterval(poll);
+          const results = test.results || {};
+          document.getElementById('stress-status').innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div><div class="text-2xl font-bold text-accent-cyan font-mono">${test.completed_tasks}/${test.total_tasks}</div><div class="text-xs text-gray-500">Tasks Done</div></div>
+              <div><div class="text-2xl font-bold text-accent-pink font-mono">${test.total_messages}</div><div class="text-xs text-gray-500">Messages</div></div>
+              <div><div class="text-2xl font-bold text-accent-yellow font-mono">${test.avg_response_ms || 0}ms</div><div class="text-xs text-gray-500">Avg Response</div></div>
+              <div><div class="text-2xl font-bold text-accent-purple font-mono">${test.failed_tasks}</div><div class="text-xs text-gray-500">Failed</div></div>
+            </div>
+          `;
+          toast(`Stress test completed! ${test.completed_tasks} tasks, ${test.total_messages} messages`, 'success');
+          refreshAll();
+          refreshMessages();
+        }
+      }, 2000);
+    }
+  </script>
+</body>
+</html>

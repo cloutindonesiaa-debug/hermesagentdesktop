@@ -1,0 +1,15 @@
+{
+  "name": "mission-control-local",
+  "version": "1.0.0",
+  "description": "Mission Control — AI Agent Orchestration Dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "sql.js": "^1.11.0",
+    "ws": "^8.18.0"
+  }
+}
