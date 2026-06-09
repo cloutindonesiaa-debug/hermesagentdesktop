@@ -925,17 +925,19 @@ app.post('/api/delegate', async (req, res) => {
   const agents = queryAll('SELECT * FROM agents WHERE name != "The Boss" AND status = "idle"');
   if (agents.length === 0) return res.status(400).json({ error: 'No idle agents available' });
 
-  // Smart delegation based on task keywords
+  // Smart delegation based on task keywords (clipper first for video tasks)
   const taskLower = (task_title + ' ' + (task_description || '')).toLowerCase();
   let bestAgent = agents[0];
 
-  if (taskLower.includes('code') || taskLower.includes('develop') || taskLower.includes('api') || taskLower.includes('bug') || taskLower.includes('implement')) {
+  if (taskLower.includes('clip') || taskLower.includes('video') || taskLower.includes('youtube') || taskLower.includes('tiktok') || taskLower.includes('shorts') || taskLower.includes('reels')) {
+    bestAgent = agents.find(a => a.name === 'Clip Master') || agents[0];
+  } else if (taskLower.includes('code') || taskLower.includes('develop') || taskLower.includes('api') || taskLower.includes('bug') || taskLower.includes('implement')) {
     bestAgent = agents.find(a => a.name === 'Dev Lead') || agents[0];
   } else if (taskLower.includes('design') || taskLower.includes('ui') || taskLower.includes('ux') || taskLower.includes('layout') || taskLower.includes('visual')) {
     bestAgent = agents.find(a => a.name === 'Design Wizard') || agents[0];
   } else if (taskLower.includes('research') || taskLower.includes('analyze') || taskLower.includes('data') || taskLower.includes('study') || taskLower.includes('report')) {
     bestAgent = agents.find(a => a.name === 'Research Brain') || agents[0];
-  } else if (taskLower.includes('social') || taskLower.includes('content') || taskLower.includes('post') || taskLower.includes('instagram') || taskLower.includes('tiktok')) {
+  } else if (taskLower.includes('social') || taskLower.includes('content') || taskLower.includes('post') || taskLower.includes('instagram')) {
     bestAgent = agents.find(a => a.name === 'Social Queen') || agents[0];
   } else if (taskLower.includes('automate') || taskLower.includes('pipeline') || taskLower.includes('script') || taskLower.includes('deploy') || taskLower.includes('ci/cd')) {
     bestAgent = agents.find(a => a.name === 'Auto Pilot') || agents[0];
@@ -985,7 +987,8 @@ app.post('/api/delegate-all', async (req, res) => {
 
     const taskLower = (task.title + ' ' + (task.description || '')).toLowerCase();
     let bestAgent = agents[0];
-    if (taskLower.includes('code') || taskLower.includes('develop')) bestAgent = agents.find(a => a.name === 'Dev Lead') || agents[0];
+    if (taskLower.includes('clip') || taskLower.includes('video') || taskLower.includes('youtube') || taskLower.includes('tiktok')) bestAgent = agents.find(a => a.name === 'Clip Master') || agents[0];
+    else if (taskLower.includes('code') || taskLower.includes('develop')) bestAgent = agents.find(a => a.name === 'Dev Lead') || agents[0];
     else if (taskLower.includes('design') || taskLower.includes('ui')) bestAgent = agents.find(a => a.name === 'Design Wizard') || agents[0];
     else if (taskLower.includes('research') || taskLower.includes('analyze')) bestAgent = agents.find(a => a.name === 'Research Brain') || agents[0];
     else if (taskLower.includes('social') || taskLower.includes('content')) bestAgent = agents.find(a => a.name === 'Social Queen') || agents[0];
@@ -1066,6 +1069,70 @@ app.post('/api/memory/share', (req, res) => {
   saveDB();
 
   res.json({ ok: true, id, message: `Memory shared from ${fromAgent?.name} to ${toAgent?.name}` });
+});
+
+// ─── API: Clipper - Process YouTube Video ───────────────────────
+app.post('/api/clipper/process', async (req, res) => {
+  const { youtube_url, clips_count = 20, clip_duration = 120, overlap = 24 } = req.body;
+  if (!youtube_url) return res.status(400).json({ error: 'YouTube URL is required' });
+
+  const clipMaster = queryOne('SELECT * FROM agents WHERE name = "Clip Master"');
+  if (!clipMaster) return res.status(400).json({ error: 'Clip Master agent not found' });
+
+  // Create task for Clip Master
+  const taskId = runSQL('INSERT INTO tasks (title, description, priority, assigned_to, status, created_by, tags) VALUES (?,?,?,?,?,?,?)',
+    [
+      `Clip YouTube: ${youtube_url}`,
+      `Process ${clips_count} clips (${clip_duration}s each, ${overlap}s overlap) from ${youtube_url}`,
+      'high',
+      clipMaster.id,
+      'assigned',
+      'user',
+      JSON.stringify(['clipper', 'youtube', 'video-processing'])
+    ]);
+
+  // Store in Clip Master's memory
+  runSQL('INSERT INTO agent_memory (agent_id, category, key, value, importance) VALUES (?,?,?,?,?)',
+    [clipMaster.id, 'clipper', `video_${Date.now()}`, `New video to clip: ${youtube_url} (${clips_count} clips)`, 8]);
+
+  // Send delegation message
+  const boss = queryOne('SELECT * FROM agents WHERE name = "The Boss"');
+  if (boss) {
+    runSQL('INSERT INTO messages (from_agent_id, to_agent_id, channel, type, content) VALUES (?,?,?,?,?)',
+      [boss.id, clipMaster.id, 'clipper', 'task', `New clipping task: ${youtube_url}. Target: ${clips_count} clips.`]);
+  }
+
+  logActivity('clipper_task', 'User', `New clipper task: ${youtube_url} → ${clips_count} clips`, 'task', taskId);
+  broadcast('clipper_task', { task_id: taskId, youtube_url, clips_count });
+  saveDB();
+
+  res.json({
+    ok: true,
+    task_id: taskId,
+    message: `Clip Master assigned to process ${clips_count} clips from ${youtube_url}`,
+    agent: clipMaster.name,
+    settings: { clips_count, clip_duration, overlap, format: '9:16 vertical', encoder: 'libsvtav1' }
+  });
+});
+
+// ─── API: Clipper - Get Status ──────────────────────────────────
+app.get('/api/clipper/status', (req, res) => {
+  const clipMaster = queryOne('SELECT * FROM agents WHERE name = "Clip Master"');
+  const clipTasks = queryAll('SELECT * FROM tasks WHERE assigned_to = ? ORDER BY created_at DESC LIMIT 10',
+    [clipMaster?.id || 0]);
+  const clipMemories = queryAll('SELECT * FROM agent_memory WHERE agent_id = ? AND category = "clipper" ORDER BY updated_at DESC LIMIT 10',
+    [clipMaster?.id || 0]);
+
+  res.json({
+    agent: clipMaster ? {
+      name: clipMaster.name,
+      status: clipMaster.status,
+      tasks_completed: clipMaster.tasks_completed,
+      last_activity: clipMaster.last_activity
+    } : null,
+    recent_tasks: clipTasks,
+    recent_memories: clipMemories
+  });
 });
 
 // ─── API: System Health ─────────────────────────────────────────
