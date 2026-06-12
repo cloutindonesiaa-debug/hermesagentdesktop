@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏦 XAU/USD Institutional Trading Company — Hermes CIO</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0e17;--card:#111827;--card2:#1a2332;--border:#1e293b;
+  --text:#e2e8f0;--muted:#64748b;--accent:#8b5cf6;
+  --green:#10b981;--red:#ef4444;--yellow:#f59e0b;--cyan:#06b6d4;
+  --blue:#3b82f6;--orange:#f97316;--pink:#ec4899;
+}
+body{background:var(--bg);color:var(--text);font-family:'Inter','Segoe UI',sans-serif;overflow-x:hidden}
+.app{display:grid;grid-template-columns:1fr;grid-template-rows:auto auto 1fr;height:100vh}
+
+/* TICKER TAPE */
+.ticker-tape{height:46px;overflow:hidden;border-bottom:1px solid var(--border)}
+
+/* HEADER */
+.header{background:linear-gradient(135deg,#0f172a,#1e1b4b);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between}
+.header-left{display:flex;align-items:center;gap:16px}
+.logo{font-size:28px}
+.header h1{font-size:18px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.header-right{display:flex;align-items:center;gap:16px}
+.status-badge{padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}
+.status-live{background:rgba(16,185,129,.15);color:var(--green);border:1px solid rgba(16,185,129,.3)}
+.status-offline{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.btn{padding:8px 20px;border-radius:8px;border:none;font-weight:600;cursor:pointer;font-size:13px;transition:all .2s}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#7c3aed}
+
+/* MAIN */
+.main{display:grid;grid-template-columns:280px 1fr 300px;gap:12px;padding:12px;overflow:hidden;height:calc(100vh - 46px - 56px)}
+
+/* LEFT PANEL — AGENTS */
+.agents-panel{display:flex;flex-direction:column;gap:6px;overflow-y:auto}
+.agent-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;display:flex;align-items:center;gap:8px;transition:all .3s}
+.agent-card.running{border-color:var(--accent);box-shadow:0 0 20px rgba(139,92,246,.2)}
+.agent-card.done{border-color:var(--green)}
+.agent-card.error{border-color:var(--red)}
+.agent-avatar{font-size:20px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--card2)}
+.agent-info{flex:1;min-width:0}
+.agent-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agent-role{font-size:10px;color:var(--muted)}
+.agent-status{font-size:9px;font-weight:600;padding:2px 6px;border-radius:10px}
+.agent-status.idle{background:rgba(100,116,139,.15);color:var(--muted)}
+.agent-status.running{background:rgba(139,92,246,.15);color:var(--accent);animation:pulse 1s infinite}
+.agent-status.done{background:rgba(16,185,129,.15);color:var(--green)}
+.agent-status.error{background:rgba(239,68,68,.15);color:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* CENTER */
+.center{display:flex;flex-direction:column;gap:10px;overflow-y:auto}
+
+/* TradingView Chart */
+.tv-chart-container{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;flex:1;min-height:400px}
+.tv-chart-container iframe{width:100%;height:100%;border:none}
+
+/* Signal Cards */
+.signal-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.signal-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center}
+.signal-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.signal-value{font-size:20px;font-weight:800}
+.signal-sub{font-size:10px;color:var(--muted);margin-top:2px}
+
+/* Decision Banner */
+.decision-banner{border-radius:10px;padding:14px;text-align:center;font-size:16px;font-weight:800;letter-spacing:2px;text-transform:uppercase}
+.decision-banner.BUY{background:linear-gradient(135deg,rgba(16,185,129,.15),rgba(16,185,129,.05));border:2px solid var(--green);color:var(--green)}
+.decision-banner.SELL{background:linear-gradient(135deg,rgba(239,68,68,.15),rgba(239,68,68,.05));border:2px solid var(--red);color:var(--red)}
+.decision-banner.WAIT{background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05));border:2px solid var(--yellow);color:var(--yellow)}
+.decision-banner.NO_TRADE{background:linear-gradient(135deg,rgba(100,116,139,.15),rgba(100,116,139,.05));border:2px solid var(--muted);color:var(--muted)}
+
+/* Timeframe Bias */
+.tf-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.tf-card{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px;text-align:center}
+.tf-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.tf-bias{font-size:12px;font-weight:700;margin-top:2px}
+.tf-bias.BULLISH{color:var(--green)}.tf-bias.BEARISH{color:var(--red)}.tf-bias.NEUTRAL{color:var(--yellow)}
+
+/* Analysis Grid */
+.analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.analysis-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px}
+.analysis-title{font-size:12px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:4px}
+.analysis-row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;border-bottom:1px solid rgba(255,255,255,.03)}
+.analysis-row:last-child{border:none}
+.analysis-key{color:var(--muted)}.analysis-val{font-weight:600}
+
+/* Risk */
+.risk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.risk-item{background:var(--card2);border-radius:6px;padding:8px;text-align:center}
+.risk-item-label{font-size:9px;color:var(--muted);text-transform:uppercase}
+.risk-item-val{font-size:14px;font-weight:700;margin-top:2px}
+
+/* RIGHT PANEL */
+.right-panel{display:flex;flex-direction:column;gap:8px;overflow-y:auto}
+.feed-card{background:var(--card);border:1px solid var(--border);border-radius:8px;flex:1;display:flex;flex-direction:column;min-height:0}
+.feed-header{padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px}
+.feed-body{flex:1;overflow-y:auto;padding:6px}
+.feed-item{padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.03);font-size:10px;line-height:1.4}
+.feed-item .time{color:var(--muted);font-size:9px}
+.feed-item .agent-tag{font-weight:600;margin-right:3px}
+
+/* JSON */
+.json-output{background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:8px;font-family:'Fira Code',monospace;font-size:9px;max-height:200px;overflow-y:auto;white-space:pre-wrap;color:var(--cyan)}
+
+/* REAL-TIME PRICE TICKER */
+.price-ticker{background:linear-gradient(135deg,#0f172a,#1a1040);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:center;gap:32px}
+.price-main{text-align:center}
+.price-symbol{font-size:14px;color:var(--muted);font-weight:600;letter-spacing:2px}
+.price-value{font-size:48px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.1}
+.price-up{color:var(--green)}.price-down{color:var(--red)}
+.price-change-line{font-size:16px;font-weight:700;margin-top:4px}
+.price-stats{display:flex;gap:24px}
+.price-stat{text-align:center}
+.price-stat-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.price-stat-val{font-size:18px;font-weight:700;margin-top:2px}
+.price-source{font-size:9px;color:var(--muted);margin-top:6px}
+.price-live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:4px;animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Timeframe buttons */
+.tf-btn{background:var(--card2);border:1px solid var(--border);color:var(--muted);padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;transition:all .2s}
+.tf-btn:hover{background:var(--border);color:var(--text)}
+.tf-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+@media(max-width:1200px){.main{grid-template-columns:1fr;grid-template-rows:auto auto auto}}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- TRADINGVIEW TICKER TAPE -->
+  <div class="ticker-tape">
+    <div class="tradingview-widget-container">
+      <div class="tradingview-widget-container__widget"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+      {
+        "symbols": [
+          {"proName": "OANDA:XAUUSD", "title": "Gold"},
+          {"proName": "OANDA:XAGUSD", "title": "Silver"},
+          {"proName": "FX_IDC:USDIDR", "title": "USD/IDR"},
+          {"proName": "OANDA:EURUSD", "title": "EUR/USD"},
+          {"proName": "OANDA:GBPUSD", "title": "GBP/USD"},
+          {"proName": "NASDAQ:AAPL", "title": "Apple"},
+          {"proName": "NASDAQ:TSLA", "title": "Tesla"}
+        ],
+        "showSymbolLogo": true,
+        "colorTheme": "dark",
+        "isTransparent": false,
+        "displayMode": "adaptive",
+        "locale": "id"
+      }
+      </script>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <span class="logo">🏦</span>
+      <div>
+        <h1>XAU/USD INSTITUTIONAL TRADING COMPANY</h1>
+        <div style="font-size:10px;color:var(--muted)">Hermes CIO • 9-Agent Pipeline • TradingView + Yahoo Finance</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div id="connectionStatus" class="status-badge status-offline">OFFLINE</div>
+      <button class="btn btn-primary" onclick="runAnalysis()">▶ Run Analysis</button>
+    </div>
+  </div>
+
+  <!-- REAL-TIME PRICE TICKER -->
+  <div class="price-ticker">
+    <div class="price-main">
+      <div class="price-symbol">XAU / USD</div>
+      <div class="price-value" id="rtPrice">--</div>
+      <div class="price-change-line" id="rtChange">--</div>
+      <div class="price-source"><span class="price-live-dot"></span> <span id="rtSource">Connecting...</span></div>
+    </div>
+    <div class="price-stats">
+      <div class="price-stat">
+        <div class="price-stat-label">24h High</div>
+        <div class="price-stat-val" id="rtHigh" style="color:var(--green)">--</div>
+      </div>
+      <div class="price-stat">
+        <div class="price-stat-label">24h Low</div>
+        <div class="price-stat-val" id="rtLow" style="color:var(--red)">--</div>
+      </div>
+      <div class="price-stat">
+        <div class="price-stat-label">Spread</div>
+        <div class="price-stat-val" id="rtSpread" style="color:var(--muted)">--</div>
+      </div>
+      <div class="price-stat">
+        <div class="price-stat-label">Last Update</div>
+        <div class="price-stat-val" id="rtTime" style="color:var(--muted);font-size:13px">--</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <!-- LEFT — AGENTS -->
+    <div class="agents-panel" id="agentsPanel"></div>
+
+    <!-- CENTER -->
+    <div class="center">
+      <!-- Decision Banner -->
+      <div id="decisionBanner" class="decision-banner NO_TRADE">NO TRADE — AWAITING ANALYSIS</div>
+
+      <!-- TradingView Chart (iframe embed) -->
+      <div class="tv-chart-container" style="position:relative;padding:0">
+        <iframe
+          id="tvChart"
+          style="width:100%;height:100%;border:none"
+          src="https://s.tradingview.com/widgetembed/?symbol=OANDA:XAUUSD&interval=5&theme=dark&style=1&locale=id&backgroundColor=%230a0e17&gridColor=%231e293b&hide_top_toolbar=0&hide_legend=0&save_image=0&calendar=0&hide_volume=0&support_host=https%3A%2F%2Fwww.tradingview.com"
+          allowfullscreen
+        ></iframe>
+        <div style="position:absolute;top:8px;left:12px;z-index:10;display:flex;gap:6px">
+          <button onclick="switchTF(1)" class="tf-btn" id="tf-1">M1</button>
+          <button onclick="switchTF(5)" class="tf-btn active" id="tf-5">M5</button>
+          <button onclick="switchTF(15)" class="tf-btn" id="tf-15">M15</button>
+          <button onclick="switchTF(60)" class="tf-btn" id="tf-60">H1</button>
+          <button onclick="switchTF(240)" class="tf-btn" id="tf-240">H4</button>
+        </div>
+      </div>
+
+      <!-- Signal Summary -->
+      <div class="signal-row">
+        <div class="signal-card">
+          <div class="signal-label">Confidence</div>
+          <div id="sigConfidence" class="signal-value" style="color:var(--muted)">--</div>
+          <div class="signal-sub">/ 100</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-label">Tech Score</div>
+          <div id="sigTech" class="signal-value" style="color:var(--cyan)">--</div>
+          <div id="sigTechBias" class="signal-sub">--</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-label">Fund Score</div>
+          <div id="sigFund" class="signal-value" style="color:var(--yellow)">--</div>
+          <div id="sigFundBias" class="signal-sub">--</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-label">R:R Ratio</div>
+          <div id="sigRR" class="signal-value" style="color:var(--accent)">--</div>
+          <div class="signal-sub">min 1.5</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-label">Entry</div>
+          <div id="sigEntry" class="signal-value" style="color:var(--cyan);font-size:16px">--</div>
+          <div id="sigSLTP" class="signal-sub">SL: -- | TP: --</div>
+        </div>
+      </div>
+
+      <!-- Timeframe Bias -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px">📊 Multi-Timeframe Bias</div>
+        <div class="tf-grid" id="tfGrid"></div>
+      </div>
+
+      <!-- Analysis Grid -->
+      <div class="analysis-grid">
+        <div class="analysis-card">
+          <div class="analysis-title">📊 Technical Analysis</div>
+          <div id="techAnalysis"></div>
+        </div>
+        <div class="analysis-card">
+          <div class="analysis-title">🏛️ Fundamental Macro</div>
+          <div id="fundAnalysis"></div>
+        </div>
+      </div>
+
+      <!-- Risk Management -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px">
+        <div class="analysis-title">🛡️ Risk Management</div>
+        <div class="risk-grid" id="riskGrid"></div>
+      </div>
+
+      <!-- JSON -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px">
+        <div class="analysis-title">📋 Full JSON Output</div>
+        <div id="jsonOutput" class="json-output">Awaiting analysis...</div>
+      </div>
+    </div>
+
+    <!-- RIGHT — FEEDS -->
+    <div class="right-panel">
+      <div class="feed-card">
+        <div class="feed-header">📡 Agent Activity Feed</div>
+        <div class="feed-body" id="activityFeed"></div>
+      </div>
+      <div class="feed-card">
+        <div class="feed-header">📊 Recent Signals</div>
+        <div class="feed-body" id="signalFeed"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const AGENTS = [
+  {id:'cio',name:'Hermes CIO',role:'🏦 Chief Investment Officer',avatar:'🏦',color:'#8b5cf6'},
+  {id:'market-data',name:'Market Data',role:'📡 Real-time Feed',avatar:'📡',color:'#06b6d4'},
+  {id:'technical',name:'Technical Analyst',role:'📊 Chart & Indicators',avatar:'📊',color:'#10b981'},
+  {id:'fundamental',name:'Fundamental Macro',role:'🏛️ Macro Economics',avatar:'🏛️',color:'#f59e0b'},
+  {id:'news',name:'News & Event Risk',role:'📰 News Intel',avatar:'📰',color:'#ef4444'},
+  {id:'quant',name:'Quant Scoring',role:'🧮 Confidence Calc',avatar:'🧮',color:'#6366f1'},
+  {id:'risk',name:'Risk Manager',role:'🛡️ Risk Control',avatar:'🛡️',color:'#f97316'},
+  {id:'execution',name:'Execution',role:'⚡ Trade Execution',avatar:'⚡',color:'#14b8a6'},
+  {id:'journal',name:'Trade Journal',role:'📝 Documentation',avatar:'📝',color:'#a78bfa'},
+  {id:'killswitch',name:'Kill Switch',role:'🚨 Safety & Compliance',avatar:'🚨',color:'#dc2626'}
+];
+
+function initAgents() {
+  const panel = document.getElementById('agentsPanel');
+  panel.innerHTML = AGENTS.map(a => `
+    <div class="agent-card" id="agent-${a.id}">
+      <div class="agent-avatar" style="background:${a.color}22;color:${a.color}">${a.avatar}</div>
+      <div class="agent-info">
+        <div class="agent-name">${a.name}</div>
+        <div class="agent-role">${a.role}</div>
+      </div>
+      <span class="agent-status idle" id="status-${a.id}">IDLE</span>
+    </div>
+  `).join('');
+}
+
+function connectSSE() {
+  const es = new EventSource('/api/stream');
+  const status = document.getElementById('connectionStatus');
+  es.onopen = () => { status.textContent='LIVE'; status.className='status-badge status-live'; };
+  es.onerror = () => { status.textContent='OFFLINE'; status.className='status-badge status-offline'; };
+  es.addEventListener('agent-status', e => {
+    const d = JSON.parse(e.data);
+    const el = document.getElementById('status-' + d.agent);
+    const card = document.getElementById('agent-' + d.agent);
+    if (!el) return;
+    el.textContent = d.status.toUpperCase();
+    el.className = 'agent-status ' + d.status;
+    if (card) card.className = 'agent-card ' + d.status;
+  });
+  es.addEventListener('activity', e => {
+    const d = JSON.parse(e.data);
+    const agent = AGENTS.find(a => a.id === d.agent_id);
+    const feed = document.getElementById('activityFeed');
+    const div = document.createElement('div');
+    div.className = 'feed-item';
+    div.innerHTML = `<span class="time">${new Date(d.created_at).toLocaleTimeString()}</span> <span class="agent-tag" style="color:${agent?.color||'#64748b'}">[${agent?.name||d.agent_id}]</span> ${d.description}`;
+    feed.prepend(div);
+    if (feed.children.length > 80) feed.lastChild.remove();
+  });
+  es.addEventListener('pipeline-result', e => updateDashboard(JSON.parse(e.data)));
+}
+
+function updateDashboard(d) {
+  const banner = document.getElementById('decisionBanner');
+  const action = d.decision?.action || 'NO TRADE';
+  banner.textContent = `${action} — Confidence: ${d.decision?.confidence_score || 0}/100`;
+  banner.className = 'decision-banner ' + action.replace(' ', '_');
+
+  document.getElementById('sigConfidence').textContent = d.decision?.confidence_score || '--';
+  const confEl = document.getElementById('sigConfidence');
+  confEl.style.color = (d.decision?.confidence_score >= 75) ? 'var(--green)' : (d.decision?.confidence_score >= 60) ? 'var(--yellow)' : 'var(--red)';
+
+  document.getElementById('sigTech').textContent = d.technical_analysis?.score || '--';
+  document.getElementById('sigTechBias').textContent = d.technical_analysis?.trend || '--';
+  document.getElementById('sigFund').textContent = d.fundamental_analysis?.score || '--';
+  document.getElementById('sigFundBias').textContent = d.fundamental_analysis?.usd_bias || '--';
+  document.getElementById('sigRR').textContent = d.risk_management?.risk_reward_ratio || '--';
+  document.getElementById('sigEntry').textContent = d.risk_management?.entry || '--';
+  const sl = d.risk_management?.stop_loss || '--';
+  const tp1 = d.risk_management?.take_profit_1 || '--';
+  const tp2 = d.risk_management?.take_profit_2 || '--';
+  document.getElementById('sigSLTP').textContent = `SL: ${sl} | TP1: ${tp1} | TP2: ${tp2}`;
+
+  const tfGrid = document.getElementById('tfGrid');
+  tfGrid.innerHTML = Object.entries(d.timeframe_bias || {}).map(([tf, bias]) => `
+    <div class="tf-card"><div class="tf-label">${tf}</div><div class="tf-bias ${bias}">${bias}</div></div>
+  `).join('');
+
+  const ta = d.technical_analysis || {};
+  document.getElementById('techAnalysis').innerHTML = `
+    <div class="analysis-row"><span class="analysis-key">Trend</span><span class="analysis-val">${ta.trend||'--'}</span></div>
+    <div class="analysis-row"><span class="analysis-key">Bull TFs</span><span class="analysis-val" style="color:var(--green)">${ta.bullTimeframes||0}</span></div>
+    <div class="analysis-row"><span class="analysis-key">Bear TFs</span><span class="analysis-val" style="color:var(--red)">${ta.bearTimeframes||0}</span></div>
+    <div class="analysis-row"><span class="analysis-key">Score</span><span class="analysis-val">${ta.score||0}/100</span></div>
+  `;
+
+  const fa = d.fundamental_analysis || {};
+  document.getElementById('fundAnalysis').innerHTML = `
+    <div class="analysis-row"><span class="analysis-key">USD Bias</span><span class="analysis-val">${fa.usd_bias||'--'}</span></div>
+    <div class="analysis-row"><span class="analysis-key">Yield Bias</span><span class="analysis-val">${fa.yield_bias||'--'}</span></div>
+    <div class="analysis-row"><span class="analysis-key">Fed Bias</span><span class="analysis-val">${fa.fed_bias||'--'}</span></div>
+    <div class="analysis-row"><span class="analysis-key">Safe Haven</span><span class="analysis-val">${fa.safe_haven||'--'}</span></div>
+    <div class="analysis-row"><span class="analysis-key">Event Risk</span><span class="analysis-val">${fa.event_risk||'--'}</span></div>
+    <div class="analysis-row"><span class="analysis-key">Score</span><span class="analysis-val">${fa.score||0}/100</span></div>
+  `;
+
+  const rm = d.risk_management || {};
+  document.getElementById('riskGrid').innerHTML = `
+    <div class="risk-item"><div class="risk-item-label">Entry</div><div class="risk-item-val" style="color:var(--cyan)">${rm.entry||'--'}</div></div>
+    <div class="risk-item"><div class="risk-item-label">Stop Loss</div><div class="risk-item-val" style="color:var(--red)">${rm.stop_loss||'--'}</div></div>
+    <div class="risk-item"><div class="risk-item-label">TP1</div><div class="risk-item-val" style="color:var(--green)">${rm.take_profit_1||'--'}</div></div>
+    <div class="risk-item"><div class="risk-item-label">TP2</div><div class="risk-item-val" style="color:var(--green)">${rm.take_profit_2||'--'}</div></div>
+    <div class="risk-item"><div class="risk-item-label">Lot Size</div><div class="risk-item-val">${rm.lot_size||'--'}</div></div>
+    <div class="risk-item"><div class="risk-item-label">Risk $</div><div class="risk-item-val">${rm.risk_amount||'--'}</div></div>
+  `;
+
+  document.getElementById('jsonOutput').textContent = JSON.stringify(d, null, 2);
+
+  const feed = document.getElementById('signalFeed');
+  const color = action === 'BUY' ? 'var(--green)' : action === 'SELL' ? 'var(--red)' : 'var(--yellow)';
+  const div = document.createElement('div');
+  div.className = 'feed-item';
+  div.innerHTML = `<span class="time">${new Date(d.timestamp).toLocaleTimeString()}</span> <span style="color:${color};font-weight:700">${action}</span> Score: ${d.decision?.confidence_score||0} | $${d.market_price?.price?.toFixed(2)||'--'}`;
+  feed.prepend(div);
+  if (feed.children.length > 50) feed.lastChild.remove();
+}
+
+async function runAnalysis() {
+  AGENTS.forEach(a => {
+    const el = document.getElementById('status-' + a.id);
+    const card = document.getElementById('agent-' + a.id);
+    if (el) { el.textContent = 'IDLE'; el.className = 'agent-status idle'; }
+    if (card) card.className = 'agent-card';
+  });
+  try {
+    const resp = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const data = await resp.json();
+    updateDashboard(data);
+  } catch (err) { console.error('Analysis failed:', err); }
+}
+
+initAgents();
+connectSSE();
+
+// ═══ TRADINGVIEW CHART TIMEFRAME SWITCHER ═══
+function switchTF(interval) {
+  const iframe = document.getElementById('tvChart');
+  if (!iframe) return;
+  iframe.src = `https://s.tradingview.com/widgetembed/?symbol=OANDA:XAUUSD&interval=${interval}&theme=dark&style=1&locale=id&backgroundColor=%230a0e17&gridColor=%231e293b&hide_top_toolbar=0&hide_legend=0&save_image=0&calendar=0&hide_volume=0&support_host=https%3A%2F%2Fwww.tradingview.com`;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('tf-' + interval);
+  if (btn) btn.classList.add('active');
+}
+
+// ═══ REAL-TIME PRICE UPDATER (every 5 seconds from Binance PAXG) ═══
+function updatePriceTicker() {
+  fetch('/api/price').then(r => r.json()).then(d => {
+    if (d.status !== 'OK') return;
+    const price = d.price;
+    const change = d.change || 0;
+    const changePct = d.changePct || 0;
+    const isUp = change >= 0;
+
+    document.getElementById('rtPrice').textContent = '$' + price.toFixed(2);
+    document.getElementById('rtPrice').className = 'price-value ' + (isUp ? 'price-up' : 'price-down');
+
+    const arrow = isUp ? '▲' : '▼';
+    document.getElementById('rtChange').textContent = `${arrow} ${isUp?'+':''}${change.toFixed(2)} (${isUp?'+':''}${changePct.toFixed(2)}%)`;
+    document.getElementById('rtChange').className = 'price-change-line ' + (isUp ? 'price-up' : 'price-down');
+
+    document.getElementById('rtHigh').textContent = '$' + (d.dayHigh || 0).toFixed(2);
+    document.getElementById('rtLow').textContent = '$' + (d.dayLow || 0).toFixed(2);
+    document.getElementById('rtSpread').textContent = (d.spread || 0).toFixed(2);
+    document.getElementById('rtTime').textContent = new Date(d.lastUpdate).toLocaleTimeString();
+    document.getElementById('rtSource').textContent = d.source || 'Binance PAXG';
+  }).catch(() => {});
+}
+updatePriceTicker();
+setInterval(updatePriceTicker, 5000); // Every 5 seconds
+
+// Load latest analysis
+fetch('/api/latest').then(r=>r.json()).then(d=>{if(d.decision)updateDashboard(d)}).catch(()=>{});
+
+// Auto-run analysis every 5 min
+setInterval(runAnalysis, 300000);
+</script>
+</body>
+</html>
