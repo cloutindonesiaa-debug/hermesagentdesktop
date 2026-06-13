@@ -447,7 +447,7 @@ function switchTF(interval) {
   if (btn) btn.classList.add('active');
 }
 
-// ═══ REAL-TIME PRICE UPDATER (every 5 seconds from Binance PAXG) ═══
+// ═══ REAL-TIME PRICE UPDATER (every 5 seconds from TradingView OANDA:XAUUSD) ═══
 function updatePriceTicker() {
   fetch('/api/price').then(r => r.json()).then(d => {
     if (d.status !== 'OK') return;
@@ -467,7 +467,7 @@ function updatePriceTicker() {
     document.getElementById('rtLow').textContent = '$' + (d.dayLow || 0).toFixed(2);
     document.getElementById('rtSpread').textContent = (d.spread || 0).toFixed(2);
     document.getElementById('rtTime').textContent = new Date(d.lastUpdate).toLocaleTimeString();
-    document.getElementById('rtSource').textContent = d.source || 'Binance PAXG';
+    document.getElementById('rtSource').textContent = d.source || 'TradingView OANDA:XAUUSD';
   }).catch(() => {});
 }
 updatePriceTicker();

@@ -9,6 +9,7 @@ const fs = require('fs');
 const initSqlJs = require('sql.js');
 const http = require('http');
 const fetch = require('node-fetch');
+const WebSocket = require('ws');
 
 const app = express();
 const server = http.createServer(app);
@@ -171,31 +172,148 @@ const AGENTS = {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// MARKET DATA AGENT — Fetch real-time XAU/USD
+// TRADINGVIEW QUOTE FEED — same source family as TradingView embed
+// ═══════════════════════════════════════════════════════════════
+let tvQuoteCache = null;
+let tvQuoteCacheAt = 0;
+
+function packTVMessage(method, params) {
+  const payload = JSON.stringify({ m: method, p: params });
+  return `~m~${payload.length}~m~${payload}`;
+}
+
+function parseTVMessages(data) {
+  const s = data.toString();
+  const out = [];
+  let i = 0;
+  while (i < s.length) {
+    const a = s.indexOf('~m~', i);
+    if (a === -1) break;
+    const b = s.indexOf('~m~', a + 3);
+    if (b === -1) break;
+    const len = parseInt(s.slice(a + 3, b), 10);
+    const start = b + 3;
+    const payload = s.slice(start, start + len);
+    try { out.push(JSON.parse(payload)); } catch (e) {}
+    i = start + len;
+  }
+  return out;
+}
+
+async function fetchTradingViewQuote(symbol = 'OANDA:XAUUSD', cacheMs = 4500) {
+  const now = Date.now();
+  if (tvQuoteCache && tvQuoteCache.symbol === symbol && now - tvQuoteCacheAt < cacheMs) return tvQuoteCache;
+
+  return new Promise((resolve, reject) => {
+    const session = 'qs_' + Math.random().toString(36).slice(2, 14);
+    const ws = new WebSocket('wss://data.tradingview.com/socket.io/websocket?from=chart%2F', {
+      headers: {
+        Origin: 'https://www.tradingview.com',
+        'User-Agent': 'Mozilla/5.0'
+      }
+    });
+
+    let latest = {};
+    const timer = setTimeout(() => {
+      try { ws.close(); } catch {}
+      if (latest.price) resolve(latest);
+      else reject(new Error('TradingView quote timeout'));
+    }, 8000);
+
+    ws.on('open', () => {
+      ws.send(packTVMessage('quote_create_session', [session]));
+      ws.send(packTVMessage('quote_set_fields', [
+        session,
+        'lp', 'ch', 'chp', 'bid', 'ask', 'open_price', 'high_price', 'low_price',
+        'prev_close_price', 'volume', 'lp_time', 'current_session', 'update_mode',
+        'currency_code', 'exchange', 'description', 'short_name', 'pro_name'
+      ]));
+      ws.send(packTVMessage('quote_add_symbols', [session, symbol]));
+      ws.send(packTVMessage('quote_fast_symbols', [session, symbol]));
+    });
+
+    ws.on('message', (data) => {
+      const text = data.toString();
+      if (text.startsWith('~h~')) { ws.send(text); return; }
+      for (const msg of parseTVMessages(text)) {
+        if (msg.m === 'qsd' && msg.p?.[1]?.s === 'ok') {
+          const v = msg.p[1].v || {};
+          latest = {
+            ...latest,
+            symbol,
+            price: v.lp !== undefined ? parseFloat(v.lp) : latest.price,
+            bid: v.bid !== undefined ? parseFloat(v.bid) : latest.bid,
+            ask: v.ask !== undefined ? parseFloat(v.ask) : latest.ask,
+            change: v.ch !== undefined ? parseFloat(v.ch) : latest.change,
+            changePct: v.chp !== undefined ? parseFloat(v.chp) : latest.changePct,
+            dayHigh: v.high_price !== undefined ? parseFloat(v.high_price) : latest.dayHigh,
+            dayLow: v.low_price !== undefined ? parseFloat(v.low_price) : latest.dayLow,
+            open: v.open_price !== undefined ? parseFloat(v.open_price) : latest.open,
+            prevClose: v.prev_close_price !== undefined ? parseFloat(v.prev_close_price) : latest.prevClose,
+            volume: v.volume,
+            lpTime: v.lp_time,
+            session: v.current_session,
+            updateMode: v.update_mode,
+            exchange: v.exchange,
+            description: v.description,
+            source: v.exchange ? `TradingView ${symbol} (${v.exchange})` : (latest.source || `TradingView ${symbol}`)
+          };
+          if (latest.price && latest.bid !== undefined && latest.ask !== undefined) {
+            clearTimeout(timer);
+            try { ws.close(); } catch {}
+            tvQuoteCache = latest;
+            tvQuoteCacheAt = Date.now();
+            resolve(latest);
+          }
+        } else if (msg.m === 'critical_error' || msg.m === 'protocol_error') {
+          // Ignore until timeout so fallback can still work
+        }
+      }
+    });
+
+    ws.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+  });
+}
+
+async function fetchBinancePAXG() {
+  const binanceResp = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=PAXGUSDT', { timeout: 5000 });
+  const binanceData = await binanceResp.json();
+  return {
+    price: parseFloat(binanceData.lastPrice),
+    change: parseFloat(binanceData.priceChange),
+    changePct: parseFloat(binanceData.priceChangePercent),
+    dayHigh: parseFloat(binanceData.highPrice),
+    dayLow: parseFloat(binanceData.lowPrice),
+    bid: parseFloat(binanceData.lastPrice) - 0.15,
+    ask: parseFloat(binanceData.lastPrice) + 0.15,
+    source: 'Binance PAXG (fallback real-time)'
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARKET DATA AGENT
 // ═══════════════════════════════════════════════════════════════
 async function marketDataAgent() {
   logActivity('analysis', 'market-data', '📡 Fetching real-time XAU/USD data...');
 
   try {
-    // ═══ PRIMARY: Binance PAXG/USDT (real-time, free, no API key) ═══
-    // PAXG is a gold-backed token — price tracks XAU/USD closely
-    let realtimePrice = null;
-    let realtimeChange = null;
-    let realtimeChangePct = null;
-    let realtimeHigh = null;
-    let realtimeLow = null;
-
+    // ═══ PRIMARY: TradingView quote feed (same source family as dashboard embed) ═══
+    // Symbol matches the TradingView chart: OANDA:XAUUSD
+    let realtime = null;
     try {
-      const binanceResp = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol=PAXGUSDT', { timeout: 5000 });
-      const binanceData = await binanceResp.json();
-      realtimePrice = parseFloat(binanceData.lastPrice);
-      realtimeChange = parseFloat(binanceData.priceChange);
-      realtimeChangePct = parseFloat(binanceData.priceChangePercent);
-      realtimeHigh = parseFloat(binanceData.highPrice);
-      realtimeLow = parseFloat(binanceData.lowPrice);
-      logActivity('analysis', 'market-data', `📡 Binance PAXG: $${realtimePrice.toFixed(2)} (real-time)`);
+      realtime = await fetchTradingViewQuote('OANDA:XAUUSD');
+      logActivity('analysis', 'market-data', `📡 TradingView OANDA:XAUUSD: $${realtime.price.toFixed(2)} | Bid ${realtime.bid?.toFixed(2)} / Ask ${realtime.ask?.toFixed(2)}`);
     } catch (e) {
-      logActivity('analysis', 'market-data', `⚠️ Binance PAXG failed: ${e.message}, falling back to Yahoo`);
+      logActivity('analysis', 'market-data', `⚠️ TradingView quote failed: ${e.message}, falling back to Binance PAXG`);
+      try {
+        realtime = await fetchBinancePAXG();
+        logActivity('analysis', 'market-data', `📡 Binance PAXG fallback: $${realtime.price.toFixed(2)} (real-time)`);
+      } catch (e2) {
+        logActivity('analysis', 'market-data', `⚠️ Binance fallback failed: ${e2.message}, falling back to Yahoo`);
+      }
     }
 
     // ═══ SECONDARY: Yahoo Finance GC=F (OHLC data for technical analysis) ═══
@@ -212,12 +330,12 @@ async function marketDataAgent() {
     const yahooPrice = meta.regularMarketPrice;
     const prevClose = meta.chartPreviousClose;
 
-    // Use Binance price if available (real-time), otherwise Yahoo (delayed)
-    const price = realtimePrice || yahooPrice;
-    const change = realtimeChange || (price - prevClose);
-    const changePct = realtimeChangePct || ((change / prevClose) * 100);
-    const dayHigh = realtimeHigh || Math.max(...quotes.high.filter(v => v !== null));
-    const dayLow = realtimeLow || Math.min(...quotes.low.filter(v => v !== null));
+    // Use TradingView price if available (matches embed), fallback Binance, otherwise Yahoo (delayed)
+    const price = realtime?.price || yahooPrice;
+    const change = realtime?.change ?? (price - prevClose);
+    const changePct = realtime?.changePct ?? ((change / prevClose) * 100);
+    const dayHigh = realtime?.dayHigh || Math.max(...quotes.high.filter(v => v !== null));
+    const dayLow = realtime?.dayLow || Math.min(...quotes.low.filter(v => v !== null));
 
     // Get OHLC candle data from Yahoo for technical analysis
     const closes = quotes.close.filter(v => v !== null);
@@ -226,10 +344,10 @@ async function marketDataAgent() {
     const opens = quotes.open.filter(v => v !== null);
     const lastClose = closes[closes.length - 1] || price;
 
-    // Estimate spread
-    const spread = 0.30;
-    const bid = price - spread / 2;
-    const ask = price + spread / 2;
+    // Use real bid/ask if TradingView provides it; otherwise estimate spread
+    const bid = realtime?.bid || (price - 0.15);
+    const ask = realtime?.ask || (price + 0.15);
+    const spread = +(ask - bid).toFixed(2);
 
     // Store price
     runSQL('INSERT INTO price_history (price,high,low,open,close,change,change_pct,timeframe) VALUES (?,?,?,?,?,?,?,?)',
@@ -238,7 +356,7 @@ async function marketDataAgent() {
     // Build OHLC for multiple timeframes (from Yahoo data)
     const ohlc = buildMultiTimeframeOHLC(timestamps, opens, highs, lows, closes, quotes.volume);
 
-    const source = realtimePrice ? 'Binance PAXG (real-time)' : 'Yahoo Finance (delayed)';
+    const source = realtime?.source || 'Yahoo Finance (delayed)';
     const result_data = {
       status: 'OK',
       bid: +bid.toFixed(2),
@@ -249,8 +367,11 @@ async function marketDataAgent() {
       changePct: +changePct.toFixed(2),
       dayHigh: +dayHigh.toFixed(2),
       dayLow: +dayLow.toFixed(2),
-      prevClose: +prevClose.toFixed(2),
+      prevClose: +(realtime?.prevClose || prevClose).toFixed(2),
       source,
+      realtimeSymbol: realtime?.symbol || null,
+      exchange: realtime?.exchange || null,
+      updateMode: realtime?.updateMode || null,
       ohlc,
       lastUpdate: new Date().toISOString()
     };
@@ -1540,7 +1661,11 @@ function buildFinalResult(dataStatus, marketData, techResult, fundResult, newsRe
       change: marketData.change,
       changePct: marketData.changePct,
       dayHigh: marketData.dayHigh,
-      dayLow: marketData.dayLow
+      dayLow: marketData.dayLow,
+      source: marketData.source,
+      realtimeSymbol: marketData.realtimeSymbol,
+      exchange: marketData.exchange,
+      updateMode: marketData.updateMode
     } : null,
     timeframe_bias: techResult?.timeframes ? Object.fromEntries(
       Object.entries(techResult.timeframes).map(([k, v]) => [k, v.bias])
@@ -1589,7 +1714,7 @@ function buildFinalResult(dataStatus, marketData, techResult, fundResult, newsRe
       reason: humanSummary,
       invalid_if: riskResult?.decision === 'NO TRADE' ? riskResult.reason : ''
     },
-    execution_permission: newsResult?.permission || 'BLOCK',
+    execution_permission: (newsResult?.permission === 'ALLOW' && ['BUY','SELL'].includes(riskResult?.decision)) ? 'ALLOW' : 'BLOCK',
     human_summary: humanSummary,
     config
   };
